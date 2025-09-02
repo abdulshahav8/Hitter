@@ -1,79 +1,56 @@
-import re
-import asyncio
 from telethon import TelegramClient, events
+import re
 
-# --- Config ---
-api_id = 25777114
-api_hash = "83d41274e41d8330fc83876fb499432b"
-phone_number = "+919908262004"
+# ================== CONFIG ==================
+API_ID = 25777114
+API_HASH = "83d41274e41d8330fc83876fb499432b"
+PHONE_NUMBER = "+919908262004"
 
-source_group = -1002682944548   # yaha se CC uthana
-target_group = -1002882603089   # yaha bhejna
+SOURCE_GROUP = -1002682944548    # Jaha se uthana hai
+TARGET_GROUP = -1002882603089    # Jaha bhejna hai
+# =============================================
 
-# --- Card Extractor Function ---
-def extract_card_data(text: str):
-    """
-    Extract card data from messy text and return unified format:
-    /ho CARD|MM|YY|CVV
-    """
+# Regex patterns for CC extraction (covering all combos)
+cc_patterns = [
+    r'(\d{13,16})[| ](\d{1,2})[|/ ](\d{2,4})[| ](\d{3,4})',   # 4111111111111111|12|25|123
+    r'(\d{13,16})\s+(\d{1,2})[ /](\d{2,4})\s+(\d{3,4})',       # 4111111111111111 12/25 123
+]
 
-    # Normalize text
-    clean = text.replace("\n", " ").replace(":", " ").replace("/", " ").replace("|", " ")
-    nums = re.findall(r"\d{2,19}", clean)
+# To avoid duplicates in one run
+seen = set()
 
-    card, month, year, cvv = None, None, None, None
+# Initialize client
+client = TelegramClient("cc_forwarder", API_ID, API_HASH)
 
-    # Detect card number (13–19 digits, usually 16)
-    for n in nums:
-        if 13 <= len(n) <= 19:
-            card = n
-            break
-
-    # Detect expiry month
-    for n in nums:
-        if len(n) == 2 and 1 <= int(n) <= 12:
-            month = n.zfill(2)
-            break
-
-    # Detect expiry year
-    for n in nums:
-        if len(n) == 2 and int(n) >= 24:  # example: 24, 25, 30
-            year = n
-            break
-        elif len(n) == 4 and n.startswith("20"):  # example: 2027
-            year = n[-2:]
-            break
-
-    # Detect CVV (3–4 digits)
-    for n in nums:
-        if len(n) in [3, 4] and n not in [month, year] and (card is None or n not in card):
-            cvv = n
-            break
-
-    if card and month and year and cvv:
-        return f"/ho {card}|{month}|{year}|{cvv}"
-    return None
-
-# --- Main Telethon Client ---
-client = TelegramClient("cc_forwarder", api_id, api_hash)
-
-@client.on(events.NewMessage(chats=source_group))
+@client.on(events.NewMessage(chats=SOURCE_GROUP))
 async def handler(event):
-    raw_text = event.raw_text
-    parsed = extract_card_data(raw_text)
+    text = event.raw_text
+    combos = []
 
-    if parsed:
-        await client.send_message(target_group, parsed)
-        print(f"[✔] Sent: {parsed}")
-    else:
-        print(f"[✘] Failed to parse: {raw_text}")
+    for pattern in cc_patterns:
+        for match in re.findall(pattern, text):
+            ccnum, month, year, cvv = match
+
+            # Normalize month/year
+            month = month.zfill(2)
+            year = year[-2:]  # Take last 2 digits
+            combo = f"/ho {ccnum}|{month}|{year}|{cvv}"
+
+            if combo not in seen:
+                seen.add(combo)
+                combos.append(combo)
+
+    # Send all extracted combos
+    for combo in combos:
+        await client.send_message(TARGET_GROUP, combo)
+        print("Forwarded:", combo)
+
 
 async def main():
-    print("🔑 Logging in...")
-    await client.start(phone=phone_number)
-    print("✅ Bot started. Listening for messages...")
+    print("Starting CC Forwarder Bot...")
+    await client.start(PHONE_NUMBER)
+    print("Bot is now running 24/7...")
 
-    await client.run_until_disconnected()
-
-if __name__ == "__main__":
-    asyncio.run(main())
+with client:
+    client.loop.run_until_complete(main())
+    client.run_until_disconnected()
